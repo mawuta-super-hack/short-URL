@@ -7,8 +7,10 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.config import PROJECT_HOST, PROJECT_PORT, SHORT_URL_ID_LENGTH
+from core.config import app_settings
+from core.logger import my_logger as logger
 from db.db import Base
+
 
 ModelType = TypeVar('ModelType', bound=Base)
 ClientModelType = TypeVar('ClientModelType', bound=Base)
@@ -47,11 +49,16 @@ class RepositoryDB(
     def generate_link(self) -> str:
         """Generate short link for URLModel objects."""
         symbols = string.ascii_letters + string.digits
-        short_url_id = ''.join(
-            secrets.choice(symbols) for i in range(SHORT_URL_ID_LENGTH))
+        try:
+            short_url_id = ''.join(
+                secrets.choice(
+                    symbols) for i in range(app_settings.short_url_id_length))
 
-        short_url = (f'http://{PROJECT_HOST}:'
-                     f'{PROJECT_PORT}/api/v1/{short_url_id}')
+            short_url = (f'http://{app_settings.host}:'
+                         f'{app_settings.port}/api/v1/{short_url_id}')
+        except (ImportError, KeyError) as err:
+            logger.exception(
+                f'Short link is not created. Error - {err}')
         return short_url_id, short_url
 
     def update_history(
@@ -77,8 +84,12 @@ class RepositoryDB(
         statement = select(
             self._model).where(self._model.short_url_id == short_url_id)
         results = await db.execute(statement=statement)
-        obj = results.scalar_one_or_none()
-        obj.clicks += 1
+        try:
+            obj = results.scalar_one_or_none()
+            obj.clicks += 1
+        except ValueError as err:
+            logger.exception(
+                f'It is not possible to change the object. Error - {err}')
         self.update_history(db, obj, client)
         await db.commit()
         await db.refresh(obj)
@@ -120,8 +131,12 @@ class RepositoryDB(
         statement = select(
             self._model).where(self._model.short_url_id == short_url_id)
         obj = await db.execute(statement=statement)
-        obj = obj.scalar_one_or_none()
-        obj.is_active = False
+        try:
+            obj = obj.scalar_one_or_none()
+            obj.is_active = False
+        except ValueError as err:
+            logger.exception(
+                f'It is not possible to change the object. Error - {err}')
         await db.commit()
         await db.refresh(obj)
         return obj

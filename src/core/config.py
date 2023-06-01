@@ -1,13 +1,15 @@
-import os
+from pydantic import BaseSettings, PostgresDsn
 
-# from logging import config as logging_config
-# from core.logger import LOGGING
 
-# logging_config.dictConfig(LOGGING)
+class AppSettings(BaseSettings):
+    app_title: str = 'URL-for-shorten'
+    database_dsn: PostgresDsn
+    host: str = '127.0.0.1'
+    port: int = 8080
+    short_url_id_length: int = 6
 
-# Название проекта. Используется в Swagger-документации
-PROJECT_NAME = os.getenv('PROJECT_NAME', 'URL-for-shorten')
-PROJECT_HOST = os.getenv('PROJECT_HOST', '127.0.0.1')
-PROJECT_PORT = int(os.getenv('PROJECT_PORT', '8080'))
-SHORT_URL_ID_LENGTH = 6
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    class Config:
+        env_file = '.env'
+
+
+app_settings = AppSettings()

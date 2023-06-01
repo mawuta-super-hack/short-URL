@@ -1,10 +1,11 @@
 
-from models.urls import URLBase, History
-from schemas.urls import URLCreate, URLDelete, URLCreateList
+from models.urls import History, URLBase
+from schemas.urls import URLCreate, URLCreateList
+
 from .base import RepositoryDB
 
 
-class RepositoryURL(RepositoryDB[URLBase, History, URLCreate, URLCreateList]): # URLDelete
+class RepositoryURL(RepositoryDB[URLBase, History, URLCreate, URLCreateList]):
     pass
 
 

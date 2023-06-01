@@ -1,20 +1,23 @@
-from typing import Any, Dict, Generic, List, Optional, Type, TypeVar, Union
-from pydantic import BaseModel
-from db.db import Base
-from core.config import PROJECT_HOST, PROJECT_PORT
-import string
 import secrets
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from fastapi.encoders import jsonable_encoder
+import string
+from typing import Generic, List, Optional, Type, TypeVar
 
-ModelType = TypeVar("ModelType", bound=Base)
-RequestModelType = TypeVar("RequestModelType", bound=Base)
-CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)
-CreatelistSchemaType = TypeVar("CreatelistSchemaType", bound=BaseModel)
+from fastapi.encoders import jsonable_encoder
+from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from core.config import PROJECT_HOST, PROJECT_PORT, SHORT_URL_ID_LENGTH
+from db.db import Base
+
+ModelType = TypeVar('ModelType', bound=Base)
+ClientModelType = TypeVar('ClientModelType', bound=Base)
+CreateSchemaType = TypeVar('CreateSchemaType', bound=BaseModel)
+CreatelistSchemaType = TypeVar('CreatelistSchemaType', bound=BaseModel)
 
 
 class Repository:
+    """Basic crud class."""
 
     def get(self, *args, **kwargs):
         raise NotImplementedError
@@ -32,72 +35,99 @@ class Repository:
         raise NotImplementedError
 
 
-class RepositoryDB(Repository, Generic[ModelType, RequestModelType, CreateSchemaType, CreatelistSchemaType]):#, DeleteSchemaType]):
+class RepositoryDB(
+    Repository, Generic[
+        ModelType, ClientModelType, CreateSchemaType, CreatelistSchemaType]):
+    """CRUD class for URL and History models."""
 
-    def __init__(self, model: Type[ModelType], request: Type[RequestModelType]):
+    def __init__(self, model: Type[ModelType], client: Type[ClientModelType]):
         self._model = model
-        self._request_model = request
+        self._client_model = client
 
-    def generate_link(self):
+    def generate_link(self) -> str:
+        """Generate short link for URLModel objects."""
         symbols = string.ascii_letters + string.digits
-        short_url_id = ''.join(secrets.choice(symbols) for i in range(6))
+        short_url_id = ''.join(
+            secrets.choice(symbols) for i in range(SHORT_URL_ID_LENGTH))
 
         short_url = (f'http://{PROJECT_HOST}:'
                      f'{PROJECT_PORT}/api/v1/{short_url_id}')
-        #print(short_url)
         return short_url_id, short_url
-    
-    #def update_clicks(self, db: AsyncSession, db_obj):
-    ##    print(db_obj.clicks)
-    #    db_obj.clicks += 1
-    #    print(db_obj.clicks)
-    #    db.add(db_obj)
-    #    db.commit()
-    #    db.refresh(db_obj)
-    #    return db_obj
 
-    async def get(self, db: AsyncSession, short_url_id: str) -> Optional[ModelType]:
-        statement = select(self._model).where(self._model.short_url_id == short_url_id)
+    def update_history(
+            self,
+            db: AsyncSession,
+            url_obj: Optional[ModelType],
+            client: str
+    ) -> None:
+        """Update history for the url."""
+        history_obj = self._client_model(client=client, url_id=url_obj.id)
+        db.add(history_obj)
+        print(client, history_obj)
+        db.commit()
+        db.refresh(history_obj)
+
+    async def get(
+            self,
+            db: AsyncSession,
+            short_url_id: str,
+            client: str
+    ) -> Optional[ModelType]:
+        """Get url object."""
+        statement = select(
+            self._model).where(self._model.short_url_id == short_url_id)
         results = await db.execute(statement=statement)
         obj = results.scalar_one_or_none()
-        print(obj)
         obj.clicks += 1
-        db.add(obj)
+        self.update_history(db, obj, client)
         await db.commit()
         await db.refresh(obj)
         return obj
 
-    async def get_multi(
-        self, db: AsyncSession, *, skip=0, limit=100
-    ) -> List[ModelType]:
-        statement = select(self._model).offset(skip).limit(limit)
+    async def get_target(
+            self,
+            db: AsyncSession,
+            short_url_id: str
+    ) -> Optional[ModelType]:
+        """Get target url."""
+        statement = select(
+            self._model).where(self._model.short_url_id == short_url_id)
         results = await db.execute(statement=statement)
-        return results.scalars().all()
+        return results.scalar_one_or_none()
 
-    async def create(self, db: AsyncSession, *, obj_in: CreateSchemaType) -> ModelType:
-        #symbols = string.ascii_letters + string.digits
-        #short_url = ''.join(secrets.choice(symbols) for i in range(6))
+    async def create(
+            self,
+            db: AsyncSession,
+            *,
+            obj_in: CreateSchemaType
+    ) -> ModelType:
+        """Create url object."""
         short_url_id, short_url = self.generate_link()
-
         obj_in_data = jsonable_encoder(obj_in)
-        db_obj = self._model(**obj_in_data, short_url_id=short_url_id, short_url=short_url)
-        print(db_obj)
+        db_obj = self._model(
+            **obj_in_data, short_url_id=short_url_id, short_url=short_url)
         db.add(db_obj)
         await db.commit()
         await db.refresh(db_obj)
         return db_obj
 
-    async def delete(self, db: AsyncSession, short_url_id: str) -> Optional[ModelType]:
-        statement = select(self._model).where(self._model.short_url_id == short_url_id)
+    async def delete(
+            self,
+            db: AsyncSession,
+            short_url_id: str
+    ) -> Optional[ModelType]:
+        """Delete url object."""
+        statement = select(
+            self._model).where(self._model.short_url_id == short_url_id)
         obj = await db.execute(statement=statement)
         obj = obj.scalar_one_or_none()
         obj.is_active = False
-        db.add(obj)
         await db.commit()
         await db.refresh(obj)
         return obj
 
-    async def db_ping(self, db: AsyncSession):
+    async def db_ping(self, db: AsyncSession) -> str:
+        """Get DB connection status."""
         statement = select(self._model)
         result = await db.execute(statement=statement)
         if result:
@@ -107,14 +137,22 @@ class RepositoryDB(Repository, Generic[ModelType, RequestModelType, CreateSchema
         message = f'DB connection status: {status}.'
         return message
 
-    async def create_list(self, db: AsyncSession, *, obj_in: CreateSchemaType) -> ModelType:
+    async def create_list(
+            self,
+            db: AsyncSession,
+            *,
+            obj_in: CreateSchemaType
+    ) -> List[ModelType]:
+        """Create url objects."""
         objs = []
 
         obj_in_data = jsonable_encoder(obj_in)
         for obj in obj_in_data:
-            #symbols = string.ascii_letters + string.digits
             short_url_id, short_url = self.generate_link()
-            db_obj = self._model(target_url=obj['target_url'], short_url=short_url, short_url_id=short_url_id)
+            db_obj = self._model(
+                target_url=obj['target_url'],
+                short_url=short_url,
+                short_url_id=short_url_id)
             objs.append(db_obj)
 
         db.add_all(objs)
@@ -122,3 +160,28 @@ class RepositoryDB(Repository, Generic[ModelType, RequestModelType, CreateSchema
         for obj in objs:
             await db.refresh(obj)
         return objs
+
+    async def get_status(
+            self,
+            db: AsyncSession,
+            short_url_id: str,
+            full_info: bool = False,
+            max_result: int = 100,
+            offset: int = 0
+    ) -> ModelType | str:
+        """Get url click history."""
+        statement = select(
+            self._model).where(self._model.short_url_id == short_url_id)
+        results = await db.execute(statement=statement)
+        obj = results.scalar_one_or_none()
+        print(obj, obj.__dict__)
+        if full_info:
+            statement = select(
+                self._client_model).where(
+                self._client_model.url_id == obj.id).offset(
+                offset).limit(max_result)
+            results = await db.execute(statement=statement)
+            return results.scalars().all()
+        else:
+            message = f'Сlicks count the link - {obj.clicks}.'
+            return message

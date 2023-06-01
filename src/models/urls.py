@@ -1,7 +1,9 @@
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey
 from datetime import datetime
-from db.db import Base
+
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import relationship
+
+from db.db import Base
 
 
 class URLBase(Base):
@@ -15,7 +17,6 @@ class URLBase(Base):
     is_active = Column(Boolean, default=True)
     clicks = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
-    #url = relationship('History')
 
 
 class History(Base):

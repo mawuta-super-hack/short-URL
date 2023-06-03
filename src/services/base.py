@@ -56,12 +56,12 @@ class RepositoryDB(
 
             short_url = (f'http://{app_settings.host}:'
                          f'{app_settings.port}/api/v1/{short_url_id}')
-        except (ImportError, KeyError) as err:
+        except KeyError as err:
             logger.exception(
                 f'Short link is not created. Error - {err}')
         return short_url_id, short_url
 
-    def update_history(
+    async def update_history(
             self,
             db: AsyncSession,
             url_obj: Optional[ModelType],
@@ -70,9 +70,8 @@ class RepositoryDB(
         """Update history for the url."""
         history_obj = self._client_model(client=client, url_id=url_obj.id)
         db.add(history_obj)
-        print(client, history_obj)
-        db.commit()
-        db.refresh(history_obj)
+        await db.flush()
+        await db.refresh(history_obj)
 
     async def get(
             self,
@@ -87,12 +86,12 @@ class RepositoryDB(
         try:
             obj = results.scalar_one_or_none()
             obj.clicks += 1
+            await self.update_history(db, obj, client)
+            await db.commit()
+            await db.refresh(obj)
         except ValueError as err:
             logger.exception(
                 f'It is not possible to change the object. Error - {err}')
-        self.update_history(db, obj, client)
-        await db.commit()
-        await db.refresh(obj)
         return obj
 
     async def get_target(
@@ -116,7 +115,7 @@ class RepositoryDB(
         short_url_id, short_url = self.generate_link()
         obj_in_data = jsonable_encoder(obj_in)
         db_obj = self._model(
-            **obj_in_data, short_url_id=short_url_id, short_url=short_url)
+            **obj_in_data, short_url_id=short_url_id)
         db.add(db_obj)
         await db.commit()
         await db.refresh(db_obj)
@@ -143,14 +142,12 @@ class RepositoryDB(
 
     async def db_ping(self, db: AsyncSession) -> str:
         """Get DB connection status."""
+        db_status = {}
         statement = select(self._model)
         result = await db.execute(statement=statement)
-        if result:
-            status = 'active'
-        else:
-            status = 'failed'
-        message = f'DB connection status: {status}.'
-        return message
+        status = 'active' if result else 'failed'
+        db_status['status'] = status
+        return db_status
 
     async def create_list(
             self,
@@ -159,22 +156,25 @@ class RepositoryDB(
             obj_in: CreateSchemaType
     ) -> List[ModelType]:
         """Create url objects."""
-        objs = []
+        objs, return_obj = [], []
+        obj_dict = {}
 
         obj_in_data = jsonable_encoder(obj_in)
         for obj in obj_in_data:
             short_url_id, short_url = self.generate_link()
             db_obj = self._model(
                 target_url=obj['target_url'],
-                short_url=short_url,
                 short_url_id=short_url_id)
+            obj_dict['short_url'] = short_url
+            obj_dict['short_url_id'] = short_url_id
             objs.append(db_obj)
+            return_obj.append(obj_dict)
 
         db.add_all(objs)
         await db.commit()
         for obj in objs:
             await db.refresh(obj)
-        return objs
+        return return_obj
 
     async def get_status(
             self,
@@ -189,7 +189,6 @@ class RepositoryDB(
             self._model).where(self._model.short_url_id == short_url_id)
         results = await db.execute(statement=statement)
         obj = results.scalar_one_or_none()
-        print(obj, obj.__dict__)
         if full_info:
             statement = select(
                 self._client_model).where(
@@ -198,5 +197,6 @@ class RepositoryDB(
             results = await db.execute(statement=statement)
             return results.scalars().all()
         else:
-            message = f'Сlicks count the link - {obj.clicks}.'
-            return message
+            status = {}
+            status['clicks'] = obj.clicks
+            return status

@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import List
 
 from pydantic import BaseModel, HttpUrl
 
@@ -12,7 +11,6 @@ class URLCreate(BaseModel):
 class URLRead(URLCreate):
     """Response schema for url."""
     short_url_id: str
-    short_url: HttpUrl
     is_active: bool
     clicks: int
 
@@ -39,12 +37,12 @@ class URLSRead(BaseModel):
 
 class URLReadList(BaseModel):
     """Response schema for url list."""
-    __root__: List[URLSRead]
+    __root__: list[URLSRead]
 
 
 class URLCreateList(BaseModel):
     """Request schema for url list."""
-    __root__: List[URLCreate]
+    __root__: list[URLCreate]
 
 
 class HistoryBase(BaseModel):
@@ -58,4 +56,4 @@ class HistoryBase(BaseModel):
 
 class HistoryList(BaseModel):
     """Response schema for history."""
-    __root__: List[HistoryBase]
+    __root__: list[HistoryBase]

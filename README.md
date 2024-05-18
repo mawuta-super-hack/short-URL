@@ -35,7 +35,7 @@ DATABASE_DSN=postgresql+asyncpg://<user>:<password>@localhost:5432/<db_name>
 Клонирование репозитория и переход в него в командной строке:
 
 ```
-git clone https://git@github.com:mawuta-super-hack/async-python-sprint-4.git
+git clone https://git@github.com:mawuta-super-hack/short-URL.git
 ```
 
 ```
